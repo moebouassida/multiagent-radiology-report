@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.pyc
+.env
+data/
+*.dcm
+mlruns/
+wandb/
+.coverage
+*.egg-info/
+dist/
