@@ -362,3 +362,52 @@ def resume_pipeline(
 
     logger.info("Pipeline resumed | status=%s", final_state.get("status"))
     return final_state
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# W&B TRACKING WRAPPER
+# ══════════════════════════════════════════════════════════════════════════════
+def run_pipeline_tracked(
+    png_path: str,
+    anonymized_id: str,
+    modality: str = "CR",
+    hil: bool = False,
+    thread_id: str = None,
+) -> tuple:
+    """
+    Wrapper around run_pipeline() that automatically logs to W&B.
+    Use this instead of run_pipeline() everywhere in production.
+    """
+    import time
+    from mlops.tracking import log_pipeline_run, PipelineRunMetrics
+    from dotenv import load_dotenv
+    load_dotenv("/home/moez/projects/radiology-ai/.env")
+
+    start_time = time.time()
+    state, tid = run_pipeline(png_path, anonymized_id, modality, hil, thread_id)
+    latency = time.time() - start_time
+
+    # extract metrics from final state
+    validation = state.get("validation")
+    report     = state.get("report")
+    findings   = state.get("image_findings")
+    model_name = os.environ.get("OLLAMA_MODEL") or os.environ.get("LLM_VISION_MODEL", "unknown")
+
+    metrics = PipelineRunMetrics(
+        anonymized_id=anonymized_id,
+        modality=modality,
+        model_name=model_name,
+        qa_score=validation.score if validation else 0.0,
+        qa_passed=validation.passed if validation else False,
+        urgency_level=report.urgency_level if report else "unknown",
+        retry_count=state.get("retry_count", 0),
+        latency_seconds=round(latency, 2),
+        human_approved=state.get("human_approved", False),
+        requires_review=validation.requires_human_review if validation else False,
+        findings_count=len(findings.findings) if findings else 0,
+        impression=report.impression if report else "",
+        error=state.get("error"),
+    )
+
+    log_pipeline_run(metrics)
+    return state, tid
